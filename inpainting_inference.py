@@ -153,6 +153,7 @@ def main(
         pre_trained_path,
         subfolder="image_encoder",
         variant="fp16",
+        low_cpu_mem_usage=True,
         torch_dtype=torch.float16
     )
 
@@ -160,6 +161,7 @@ def main(
         pre_trained_path, 
         subfolder="vae", 
         variant="fp16", 
+        low_cpu_mem_usage=True,
         torch_dtype=torch.float16
     )
 
@@ -182,6 +184,7 @@ def main(
         unet=unet,
         torch_dtype=torch.float16,
     )
+    torch.cuda.empty_cache()
     pipeline = pipeline.to("cuda")
 
     os.makedirs(save_dir, exist_ok=True)
