@@ -153,6 +153,7 @@ def main(
         pre_trained_path,
         subfolder="image_encoder",
         variant="fp16",
+        low_cpu_mem_usage=True,
         torch_dtype=torch.float16
     )
 
@@ -160,6 +161,7 @@ def main(
         pre_trained_path, 
         subfolder="vae", 
         variant="fp16", 
+        low_cpu_mem_usage=True,
         torch_dtype=torch.float16
     )
 
@@ -182,7 +184,11 @@ def main(
         unet=unet,
         torch_dtype=torch.float16,
     )
+    print("before empty_cache")
+    torch.cuda.empty_cache()
+    print("before to cuda")
     pipeline = pipeline.to("cuda")
+    print("after to cuda")
 
     os.makedirs(save_dir, exist_ok=True)
     video_name = input_video_path.split("/")[-1].replace(".mp4", "").replace("_splatting_results", "") + "_inpainting_results"
@@ -274,23 +280,32 @@ def main(
 
     frames_output = torch.cat(results, dim=0).cpu()
 
+    h = frames_left.shape[2]
+    w = frames_left.shape[3]
 
-    frames_sbs = torch.cat([frames_left, frames_output], dim=3)
     frames_sbs_path = os.path.join(save_dir, f"{video_name}_sbs.mp4")
-    frames_sbs = (frames_sbs * 255).permute(0, 2, 3, 1).to(dtype=torch.uint8).cpu().numpy()
-    write_video_opencv(frames_sbs, fps, frames_sbs_path)
-
-
-    vid_left = (frames_left * 255).permute(0, 2, 3, 1).to(dtype=torch.uint8).cpu().numpy()
-    vid_right = (frames_output * 255).permute(0, 2, 3, 1).to(dtype=torch.uint8).cpu().numpy()
-
-    vid_left[:, :, :, 1] = 0
-    vid_left[:, :, :, 2] = 0
-    vid_right[:, :, :, 0] = 0
-
-    vid_anaglyph = vid_left + vid_right
     vid_anaglyph_path = os.path.join(save_dir, f"{video_name}_anaglyph.mp4")
-    write_video_opencv(vid_anaglyph, fps, vid_anaglyph_path)
+
+    out_sbs = cv2.VideoWriter(frames_sbs_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (w * 2, h))
+    out_anaglyph = cv2.VideoWriter(vid_anaglyph_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
+
+    for idx in range(frames_output.shape[0]):
+        left = (frames_left[idx] * 255).permute(1, 2, 0).to(dtype=torch.uint8).cpu().numpy()
+        right = (frames_output[idx] * 255).permute(1, 2, 0).to(dtype=torch.uint8).cpu().numpy()
+
+        sbs = np.concatenate([left, right], axis=1)
+        out_sbs.write(sbs[:, :, ::-1])
+
+        ana_left = left.copy()
+        ana_right = right.copy()
+        ana_left[:, :, 1] = 0
+        ana_left[:, :, 2] = 0
+        ana_right[:, :, 0] = 0
+        anaglyph = ana_left + ana_right
+        out_anaglyph.write(anaglyph[:, :, ::-1])
+
+    out_sbs.release()
+    out_anaglyph.release()
 
 
 if __name__ == "__main__":
